@@ -36,6 +36,7 @@ html[data-theme="light"]{
   --shadow:0 12px 30px rgba(58,44,20,.16);
 }
 html,body{height:100%}
+html{overscroll-behavior:none}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue","Noto Sans",sans-serif;
   background:var(--bg); color:var(--tx); overflow:hidden;
@@ -51,7 +52,7 @@ svg{display:block}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 
 /* ---------- landing ---------- */
-#landing{position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;background:var(--bg);overflow-y:auto}
+#landing{position:fixed;inset:0;z-index:5;display:flex;flex-direction:column;background:var(--bg);overflow-y:auto;overscroll-behavior:none}
 .l-top{display:flex;align-items:baseline;gap:12px;padding:calc(20px + env(safe-area-inset-top)) 28px 16px;border-bottom:1px solid var(--line);flex:none}
 .wordmark{font-family:Georgia,"Iowan Old Style","Palatino Linotype","Times New Roman",serif;font-size:23px;letter-spacing:.4px;color:var(--tx)}
 .l-sub{font-size:10.5px;letter-spacing:2.6px;text-transform:uppercase;color:var(--tx2)}
@@ -85,7 +86,7 @@ svg{display:block}
 /* ---------- reader shell ---------- */
 #reader{position:fixed;inset:0;z-index:10;background:var(--bg)}
 #viewport{
-  position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;
+  position:absolute;inset:0;overflow:auto;overscroll-behavior:none;
   -webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;
   scrollbar-width:thin;scrollbar-gutter:stable;
 }
@@ -96,7 +97,9 @@ svg{display:block}
   min-width:100%;min-height:100%;
 }
 #viewport.cont #zoomLayer{flex-direction:column;align-items:center}
+#viewport.cont.wide #zoomLayer{align-items:flex-start}
 #viewport.paged #zoomLayer{flex-direction:row;align-items:center}
+#viewport.paged.wide #zoomLayer{align-items:flex-start}
 .page{
   position:relative;flex:none;background:var(--paper);border-radius:4px;overflow:hidden;
   box-shadow:0 1px 2px rgba(0,0,0,.22),0 12px 30px rgba(0,0,0,.14);
@@ -177,7 +180,7 @@ html[data-invert="1"][data-theme="dark"] .page{filter:invert(.93) hue-rotate(180
 }
 .panel.open{transform:none;box-shadow:24px 0 60px rgba(0,0,0,.32)}
 .p-head{display:flex;align-items:center;justify-content:space-between;padding:14px 10px 12px 18px;border-bottom:1px solid var(--line);font-size:10.5px;letter-spacing:2.6px;text-transform:uppercase;color:var(--tx2);font-weight:600;flex:none}
-.p-body{flex:1;overflow:auto;padding:10px;overscroll-behavior:contain}
+.p-body{flex:1;overflow:auto;padding:10px;overscroll-behavior:none}
 #thumbsGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px}
 .thumb{position:relative;border-radius:6px;overflow:hidden;background:var(--paper);padding:0;transition:transform .12s}
 .thumb:active{transform:scale(.97)}
@@ -207,7 +210,7 @@ html[data-invert="1"][data-theme="dark"] .page{filter:invert(.93) hue-rotate(180
   transform:translate(-50%,16px);width:min(350px,calc(100vw - 24px));
   background:var(--bg2);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow);
   opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
-  max-height:calc(100dvh - 110px);overflow:auto;overscroll-behavior:contain;
+  max-height:calc(100dvh - 110px);overflow:auto;overscroll-behavior:none;
 }
 .sheet.open{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 @media(min-width:760px){
@@ -345,7 +348,7 @@ html[data-invert="1"][data-theme="dark"] .page{filter:invert(.93) hue-rotate(180
 
   <div id="modalAbout" class="sheet" hidden>
     <div class="m-title">Folio</div>
-    <div class="m-msg">A single-file PDF reader. Version 2.0.<br>Based on Mozilla's PDF.js. Files never leave your device.</div>
+    <div class="m-msg">A single-file PDF reader. Version 2.1.<br>Based on Mozilla's PDF.js. Files never leave your device.</div>
     <div class="about-row"><span>Zoom</span><b><span class="kbd">+</span><span class="kbd">-</span><span class="kbd">0</span> · pinch · double-tap</b></div>
     <div class="about-row"><span>Turn pages</span><b><span class="kbd">←</span><span class="kbd">→</span> · tap edges · swipe</b></div>
     <div class="about-row"><span>Search</span><b><span class="kbd">s</span></b></div>
@@ -572,49 +575,6 @@ async function recentsDel(id){
   });
 }
 
-/* ---------- shared PDFs coming from sw.js (share target) ---------- */
-async function consumeShared(){
-  let db;
-  try {
-    db = await new Promise((res, rej) => {
-      const r = indexedDB.open('pdf-lite', 1);
-      r.onupgradeneeded = () => {
-        const d = r.result;
-        if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', { keyPath: 'id' });
-        if (!d.objectStoreNames.contains('share')) d.createObjectStore('share');
-      };
-      r.onsuccess = () => res(r.result);
-      r.onerror  = () => rej(r.error);
-    });
-  } catch (e) { return; }
-
-  let entries = [];
-  try {
-    entries = await new Promise((res, rej) => {
-      const t = db.transaction('share', 'readonly');
-      const q = t.objectStore('share').getAll();
-      q.onsuccess = () => res(q.result || []);
-      q.onerror   = () => rej(q.error);
-    });
-  } catch (e) { return; }
-  if (!entries.length) return;
-
-  try {
-    await new Promise((res, rej) => {
-      const t = db.transaction('share', 'readwrite');
-      t.objectStore('share').clear();
-      t.oncomplete = res;
-      t.onerror    = () => rej(t.error);
-    });
-  } catch (e) {}
-
-  const first = entries[0];
-  if (first && first.blob) {
-    const f = new File([first.blob], first.name || 'shared.pdf', { type: 'application/pdf' });
-    openFile(f);
-  }
-}
-
 /* ============================== toast ============================== */
 let toastT = 0;
 function toast(msg, ms){
@@ -748,6 +708,7 @@ async function openFile(file, opts){
     S.mode = 'continuous'; S.fit = 'width';
     S.query = ''; S.matches = []; S.matchIdx = -1; S.indexed = false; S.indexing = false;
     S.outlineOk = null;
+    // first page size as estimate for all wrappers
     const p1 = await pdf.getPage(1);
     const v1 = p1.getViewport({ scale: 1 });
     S.w0 = v1.width; S.h0 = v1.height;
@@ -755,6 +716,7 @@ async function openFile(file, opts){
     updateSnap(); updateFitUI();
     slider.max = pdf.numPages;
     slider.value = 1;
+    // restore position
     let pos = null;
     try { pos = await kvGet('pos:' + docId()); } catch(e){}
     if (pos && opts.restore !== false && gen === S.gen){
@@ -769,6 +731,7 @@ async function openFile(file, opts){
     if (pos && pos.page > 1){ jump(pos.page, 'auto'); }
     renderVisible();
     hudFlash(S.page + ' / ' + S.pages.length);
+    // outline availability
     pdf.getOutline().then(ol => {
       S.outlineOk = !!(ol && ol.length);
       btnOutline.classList.toggle('off', !S.outlineOk);
@@ -824,6 +787,7 @@ function applyLayout(){
   for (const p of S.pages) sizePage(p);
   Z.style.gap = (GAP * S.zoom) + 'px';
   Z.style.padding = (PAD * S.zoom) + 'px';
+  updateWide();
   updateSnap();
   scheduleOffsets();
   renderVisibleSoon();
@@ -833,6 +797,17 @@ function updateSnap(){
   V.classList.toggle('cont', S.mode === 'continuous');
   V.classList.toggle('paged', S.mode === 'paged');
   V.classList.toggle('snap', S.mode === 'paged' && S.zoom <= 1.03);
+}
+/* A zoomed page larger than the viewport must anchor to the top-left.
+   Centered flex layout overflows toward the left/top — directions the
+   scroller can never reach (scrollLeft/Top are never negative). */
+function updateWide(){
+  if (!S.pages.length){ V.classList.remove('wide'); return; }
+  let mw = 0, mh = 0;
+  for (const p of S.pages){ if (p.cw > mw) mw = p.cw; if (p.ch > mh) mh = p.ch; }
+  let wide = mw > V.clientWidth - PAD * 2 * S.zoom + 1;
+  if (S.mode === 'paged' && mh > V.clientHeight + 1) wide = true;
+  V.classList.toggle('wide', wide);
 }
 function scheduleOffsets(){ offsetsDirty = true; }
 function computeOffsets(){
@@ -860,7 +835,7 @@ function nearestIdx(){
 /* ---------- render queue ---------- */
 const RQ = { list: [], active: 0, max: 2 };
 function queueRender(p){
-  if (p.queued || p.rendering) return;
+  if (p.queued) return;
   p.queued = true;
   RQ.list.push(p);
   pump();
@@ -894,6 +869,7 @@ async function renderNow(p){
     const v1 = pg.getViewport({ scale: 1, rotation: rot });
     const wh = effWH(p);
     if (Math.abs(v1.width - wh[0]) > 0.5 || Math.abs(v1.height - wh[1]) > 0.5){
+      // correct stored page aspect
       if (rot % 180 !== 0){ p.h0 = v1.width; p.w0 = v1.height; }
       else { p.w0 = v1.width; p.h0 = v1.height; }
       sizePage(p);
@@ -927,6 +903,7 @@ async function renderNow(p){
   }
 }
 async function renderExtras(p, pg, rot){
+  // text layer (selection + search marks)
   try {
     if (!p.tc) p.tc = await pg.getTextContent();
     const hasText = p.tc.items && p.tc.items.some(it => it.str && it.str.trim().length);
@@ -944,6 +921,7 @@ async function renderExtras(p, pg, rot){
       applyMarks(p);
     }
   } catch (e){}
+  // link annotations
   try {
     const anns = await pg.getAnnotations();
     if (!p.linksEl){
@@ -1164,6 +1142,7 @@ V.addEventListener('dblclick', e => {
   clearTimeout(clickTimer);
   dblTapZoom(e.clientX, e.clientY);
 });
+// internal links
 V.addEventListener('click', e => {
   const a = e.target && e.target.closest && e.target.closest('.pg-links a');
   if (!a) return;
@@ -1216,7 +1195,6 @@ function onPageUI(){
   slider.value = S.page;
   hudFlash(S.page + ' / ' + S.pages.length);
   highlightThumb();
-  renderVisibleSoon();
   savePos();
 }
 function jump(n, behavior){
@@ -1589,7 +1567,7 @@ function buildMenu(){
   add(mRow('moon', 'Dark mode', toggleTheme, { sw: isDark(), keepOpen: true, swCheck: isDark }));
   add(mRow('contrast', 'Invert page colors', toggleInvert, { sw: isInvert(), keepOpen: true, swCheck: isInvert }));
   add(mDivider());
-  add(mRow('install', 'Install app', installApp));
+  if (!isStandalone() && (installEvt || !installedFlag())) add(mRow('install', 'Install app', installApp));
   add(mRow('info', 'About Folio', () => openSheet(modalAbout)));
 }
 function askPassword(msg){
@@ -1645,7 +1623,7 @@ async function shareDoc(){
     if (S.file && navigator.canShare && navigator.canShare({ files: [S.file] })){
       await navigator.share({ files: [S.file], title: S.name });
     } else saveCopy();
-  } catch (e){ }
+  } catch (e){ /* user cancelled */ }
 }
 async function toggleFullscreen(){
   try {
@@ -1861,13 +1839,37 @@ function setLink(rel, href){
   if (!el){ el = document.createElement('link'); el.rel = rel; document.head.appendChild(el); }
   el.href = href;
 }
+function isStandalone(){
+  if (window.navigator && window.navigator.standalone === true) return true;
+  if (window.matchMedia){
+    return matchMedia('(display-mode: standalone)').matches ||
+           matchMedia('(display-mode: fullscreen)').matches ||
+           matchMedia('(display-mode: minimal-ui)').matches;
+  }
+  return false;
+}
+function markInstalled(){
+  try { localStorage.setItem('folio-installed', '1'); } catch(e){}
+}
+function installedFlag(){
+  try { return localStorage.getItem('folio-installed') === '1'; } catch(e){ return false; }
+}
 let installEvt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; });
-window.addEventListener('appinstalled', () => { installEvt = null; });
+window.addEventListener('appinstalled', () => { installEvt = null; markInstalled(); toast('Folio installed'); });
 function installApp(){
-  if (installEvt){ installEvt.prompt(); installEvt = null; }
+  if (isStandalone() || installedFlag()){ toast('Folio is already installed'); return; }
+  if (installEvt){ installEvt.prompt(); }
   else toast('Use the browser menu → “Add to Home screen”');
 }
+try {
+  const mqStandalone = window.matchMedia && matchMedia('(display-mode: standalone)');
+  if (mqStandalone){
+    const onMode = () => { if (mqStandalone.matches) markInstalled(); };
+    if (mqStandalone.addEventListener) mqStandalone.addEventListener('change', onMode);
+    else if (mqStandalone.addListener) mqStandalone.addListener(onMode);
+  }
+} catch(e){}
 function setupPWA(){
   try {
     const i192 = makeIcon(192, false);
@@ -1897,11 +1899,15 @@ function setupPWA(){
       l.rel = 'manifest';
       l.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest));
       document.head.appendChild(l);
-      if ('serviceWorker' in navigator &&
-          (location.protocol === 'https:' || /^(localhost|127\.)/.test(location.hostname))) {
-        navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(err => {
-          console.info('[Folio] service worker not registered:', err && err.message);
-        });
+      if ('serviceWorker' in navigator){
+        const sw = "self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim().then(()=>caches.keys().then(ks=>Promise.all(ks.filter(k=>k!=='folio-v2').map(k=>caches.delete(k)))))));self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;const nav=(e.request.mode==='navigate');e.respondWith(caches.open('folio-v2').then(c=>{if(nav)return fetch(e.request).then(n=>{try{if(n&&n.ok)c.put(e.request,n.clone())}catch(_){ }return n}).catch(()=>c.match(e.request).then(r=>r||Response.error()));return c.match(e.request).then(r=>{const net=fetch(e.request).then(n=>{try{if(n&&n.ok&&n.type==='basic')c.put(e.request,n.clone())}catch(_){ }return n}).catch(()=>r);return r||net})}))});";
+        try {
+          navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw], { type: 'text/javascript' }))).catch(() => {});
+        } catch (e) {}
+      }
+      // drop stale caches from older versions so updates always land
+      if (window.caches && caches.keys){
+        caches.keys().then(ks => ks.forEach(k => { if (k !== 'folio-v2') caches.delete(k); })).catch(() => {});
       }
     }
   } catch (e){}
@@ -1912,13 +1918,15 @@ initTheme();
 initInvert();
 updateFitUI();
 renderRecents();
+if (isStandalone()) markInstalled();
 setupPWA();
-consumeShared();
+// lightweight error capture (useful for support)
 window.addEventListener('error', e => { (window.__errs = window.__errs || []).push(String(e.message)); });
 window.addEventListener('unhandledrejection', e => {
   const r = e.reason;
   (window.__errs = window.__errs || []).push(String(r && (r.message || r) || 'rejection'));
 });
+// debug / automation hooks
 window.Folio = {
   open: f => openFile(f),
   state: S,
@@ -1932,4 +1940,4 @@ window.Folio = {
 })();
 </script>
 </body>
-  </html>
+</html>
